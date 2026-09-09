@@ -1,3 +1,19 @@
+
+
+![Tests](https://github.com/sajidmanzoor730/rater-limiter/actions/workflows/test.yml/badge.svg)
+
+
+
+
+
+
+
+
+
+
+
+
+
 # ratelimiter
 
 Thread-safe rate limiting for Python, with three interchangeable

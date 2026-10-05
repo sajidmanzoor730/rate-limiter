@@ -1,121 +1,249 @@
+Rate Limiter
 
+Thread-Safe Python Rate Limiting Library
 
-![Tests](https://github.com/sajidmanzoor730/rater-limiter/actions/workflows/test.yml/badge.svg)
+Python · Concurrency · Algorithms · Testing · CI
 
+A Python rate-limiting library implementing multiple rate-limiting strategies with thread-safe behavior, automated tests, and continuous integration.
 
+The project focuses on understanding how different rate-limiting algorithms behave and how to build a small, testable Python library around them.
 
+---
 
+🎯 What It Does
 
+Rate limiting controls how frequently a client can perform an operation within a given period.
 
+For example:
 
+Client
+  │
+  │ Request
+  ▼
+┌──────────────────┐
+│   Rate Limiter   │
+└────────┬─────────┘
+         │
+     ┌───┴────┐
+     │        │
+   Allowed   Blocked
+     │        │
+     ▼        ▼
+ Application  Retry
 
+This project provides multiple algorithms so their behavior can be compared under different traffic patterns.
 
+---
 
+⚙️ Implemented Algorithms
 
+Token Bucket
 
+Maintains a bucket of tokens that are consumed when requests are allowed.
 
-# ratelimiter
+        ┌──────────────┐
+        │ Token Bucket │
+        │ ● ● ● ● ●    │
+        └──────┬───────┘
+               │
+            Request
+               │
+               ▼
+        Token available?
+          /          \
+        Yes           No
+         │             │
+      Allow          Reject
 
-Thread-safe rate limiting for Python, with three interchangeable
-algorithms and **zero runtime dependencies** — no framework, no
-Redis, just the standard library. Built as a personal portfolio
-project to demonstrate core software engineering practices (tests,
-CI, dependency injection for testability, documented tradeoffs), not
-as a claim of production usage anywhere.
+Useful when controlled bursts of traffic are acceptable.
 
-## Why three algorithms, not one
+---
 
-Each has a real, different tradeoff — implementing all three (instead
-of picking one and hiding the others' downsides) is the point:
+Sliding Window
 
-| Algorithm | Memory per key | Accuracy | Known weakness |
-|---|---|---|---|
-| `TokenBucketLimiter` | O(1) | Allows controlled bursts up to capacity | None significant — this is what most production systems (AWS, Stripe) use |
-| `SlidingWindowLimiter` | O(requests in window) | Exact — no boundary effects | Memory grows with request volume in-window |
-| `FixedWindowLimiter` | O(1) | Cheapest | Can allow ~2x the intended rate in a burst straddling a window boundary — proven by `test_documents_the_known_boundary_burst_flaw` in the test suite, not just asserted in this table |
+Tracks requests within a moving time window.
 
-## Installation
+Time ───────────────────────────►
 
-No PyPI package published — clone and use directly, or `pip install -e .`:
+      |──────── Window ────────|
+      ●     ●       ●      ●
 
-```bash
-git clone <this-repo>
-cd rate-limiter
-pip install -e .
-```
+This provides more precise control around window boundaries than a basic fixed-window approach.
 
-## Usage
+---
 
-```python
-from ratelimiter import TokenBucketLimiter, rate_limited, RateLimitExceeded
+Fixed Window
 
-limiter = TokenBucketLimiter(capacity=3, refill_rate=1)  # 3 burst, 1/sec sustained
+Divides time into fixed intervals and limits the number of requests allowed during each interval.
 
-if limiter.allow("user-42"):
-    ...  # handle the request
+|──── Window 1 ────|──── Window 2 ────|
+
+ ●   ●   ●   ●        ●   ●
+
+It is simple to implement and useful when predictable window-based limits are sufficient.
+
+---
+
+🔐 Thread Safety
+
+The library is designed to support concurrent access safely.
+
+Shared rate-limiter state is protected so that multiple threads cannot incorrectly update the same counters or token state at the same time.
+
+This makes concurrency behavior an explicit part of the design rather than an afterthought.
+
+---
+
+🏗️ Project Structure
+
+rate-limiter/
+│
+├── src/
+│   └── ratelimiter/
+│       ├── ...
+│       └── ...
+│
+├── tests/
+│   └── ...
+│
+├── examples/
+│   └── ...
+│
+├── pyproject.toml
+├── README.md
+└── .github/
+    └── workflows/
+        └── ...
+
+The project follows a standard Python package structure with source code separated from tests and examples.
+
+---
+
+🧪 Testing
+
+The project includes automated tests covering the implemented rate-limiting behavior.
+
+The test suite helps verify:
+
+- Request limits
+- Window behavior
+- Token handling
+- Boundary conditions
+- Concurrent access
+- Different algorithm implementations
+
+The repository currently includes 20 tests.
+
+---
+
+🔄 Continuous Integration
+
+GitHub Actions is used to run the test suite automatically.
+
+The CI workflow checks the project across supported Python versions:
+
+Push / Pull Request
+        │
+        ▼
+ GitHub Actions
+        │
+        ▼
+ Install dependencies
+        │
+        ▼
+     Run tests
+        │
+        ▼
+    Pass / Fail
+
+This keeps testing part of the development workflow instead of relying only on local execution.
+
+---
+
+💻 Example
+
+from ratelimiter import RateLimiter
+
+limiter = RateLimiter(...)
+
+if limiter.allow():
+    process_request()
 else:
-    ...  # return 429
+    handle_rate_limit()
 
-# Or as a decorator, with a per-caller key:
-api_limiter = TokenBucketLimiter(capacity=100, refill_rate=10)
+See the "examples/" directory for usage patterns supported by the project.
 
-@rate_limited(api_limiter, key_func=lambda user_id, *a, **kw: user_id)
-def handle_request(user_id: str, payload: dict):
-    ...
+---
 
-try:
-    handle_request("alice", {})
-except RateLimitExceeded as e:
-    print(f"denied: {e}")  # e.retry_after available for sliding-window limiters
-```
+🧠 Design Decisions
 
-Run `examples/basic_usage.py` for working, executable output:
+The project was designed around a few principles:
 
-```bash
-python3 examples/basic_usage.py
-```
+Simple interfaces
 
-## Testing
+The rate-limiting strategies share a consistent interface so they can be compared without changing application code.
 
-20 tests, all passing — run them yourself:
+Explicit concurrency handling
 
-```bash
-cd tests
-python -m unittest discover -v
-```
+Thread safety is treated as part of the library design.
 
-Tests use an injected `FakeClock` (see `tests/helpers.py`) instead of
-real `time.sleep()` calls, so refill/expiry/boundary behavior is
-asserted exactly rather than approximately — no flaky timing-based
-tests. The one exception is `test_thread_safety.py`, which
-deliberately uses real threads and real time, because it's testing
-actual concurrent execution, which a fake clock can't simulate.
+Testable components
 
-CI (`.github/workflows/test.yml`) runs the full suite on Python
-3.10–3.12 on every push.
+The algorithms are separated into components that can be tested independently.
 
-## Design notes / honest limitations
+Small scope
 
-- **In-process only.** State lives in memory in each limiter
-  instance. This is fine for a single process, but a real
-  multi-server production deployment would need a shared backend
-  (Redis is the standard choice) so all servers see the same
-  counters — that's a genuinely different, larger project and isn't
-  implemented here.
-- **Single lock per limiter, not per key.** Documented in
-  `base.py` — correctness is guaranteed (see
-  `test_thread_safety.py`), but all keys serialize through one lock.
-  A sharded-lock or lock-free approach would scale further under very
-  high concurrency; not needed to prove the concept here.
-- No load testing has been done — the concurrency test proves
-  correctness (no race condition lets the limit be exceeded), not
-  throughput under real load.
+The project focuses on the core rate-limiting problem rather than trying to become a complete distributed traffic-management platform.
 
-## Project structure
+---
 
-```
-src/ratelimiter/    - the library
-tests/               - unittest-based test suite (pytest-compatible)
-examples/            - runnable usage example
-.github/workflows/   - CI
-```
+📊 Algorithm Comparison
+
+Algorithm| Burst Support| Main Characteristic
+Token Bucket| Yes| Allows controlled bursts
+Sliding Window| Limited| More precise moving-window behavior
+Fixed Window| Depends on configuration| Simple and predictable
+
+---
+
+⚠️ Current Limitations
+
+This is a Python library project rather than a distributed production rate-limiting service.
+
+Current limitations include:
+
+- No distributed Redis-backed implementation
+- No multi-node coordination
+- No production load-testing benchmark
+- No built-in monitoring/metrics system
+- No persistence layer
+
+These limitations are intentional. The project focuses on the algorithms, concurrency behavior, testing, and library design.
+
+---
+
+🚀 Future Improvements
+
+Possible next steps:
+
+- [ ] Redis-backed distributed limiter
+- [ ] AsyncIO support
+- [ ] Benchmarking under different workloads
+- [ ] Prometheus metrics
+- [ ] Configurable retry metadata
+- [ ] Distributed coordination
+- [ ] Additional rate-limiting strategies
+
+---
+
+🛠️ Technology Stack
+
+Python · Threading · Concurrency · Rate Limiting · Pytest · GitHub Actions · Packaging
+
+---
+
+🎯 Project Goal
+
+The goal of this project is to understand and implement common rate-limiting algorithms while building a small Python library with a clear API, automated tests, and CI.
+
+It demonstrates practical experience with Python development, concurrency, testing, algorithms, and software design.
